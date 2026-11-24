@@ -138,6 +138,20 @@ namespace Dan.ProxyV2.UnitTest
         }
 
         [TestMethod]
+        public async Task CertificateInHeader_TargetCertificateIsValidatedEvenWhenValidationIsTurnedOff()
+        {
+            // As in the first proxy. A call that proves who we are must know who it talks to.
+            await using var fixture = new ProxyFixture(
+                Settings(("IgnoreCertificateValidation", "true"), ("IgnoreCertificateValidationHosts", "127.0.0.1")), trustTestServer: false);
+            var (certificate, _) = TestCertificates.CreateClientCertificate("client-a");
+
+            var response = await fixture.SendAsync(fixture.CreateRequest(certificate: certificate));
+
+            Assert.AreEqual(HttpStatusCode.BadGateway, response.StatusCode);
+            Assert.AreEqual(0, fixture.Server.Requests.Count, "No request may reach a target whose certificate was not validated.");
+        }
+
+        [TestMethod]
         public async Task CertificateInHeader_IsNotForwardedToTarget()
         {
             await using var fixture = new ProxyFixture();
@@ -252,6 +266,47 @@ namespace Dan.ProxyV2.UnitTest
             Assert.AreEqual(0, fixture.Server.ConnectionCount);
         }
 
+        [TestMethod]
+        public void Settings_HostListsAreReadInTheFormTheProxyConnectsTo()
+        {
+            // A name with letters outside ASCII is connected to in its encoded form, and an
+            // IPv6 address without its brackets.
+            var settings = new DanProxySettings
+            {
+                AllowedTargetHosts = "bærum.example.no, [::1]",
+                IgnoreCertificateValidationHosts = "BÆRUM.example.no"
+            };
+
+            CollectionAssert.AreEqual(new[] { "xn--brum-voa.example.no", "::1" }, settings.AllowedTargetHostsList);
+            CollectionAssert.AreEqual(new[] { "xn--brum-voa.example.no" }, settings.IgnoreCertificateValidationHostsList);
+        }
+
+        [TestMethod]
+        public async Task AllowedHost_IsRecognisedWhicheverWayItsLettersOutsideAsciiAreWritten()
+        {
+            // The list has the encoded form of the name, and the url has the letters themselves.
+            // The first connection attempt is made to fail, so no name is looked up.
+            await using var fixture = new ProxyFixture(
+                Settings(("AllowedTargetHosts", "xn--brum-voa.invalid"), ("ConnectRetries", "0")), failFirstConnects: 1);
+
+            var response = await fixture.SendAsync(fixture.CreateRequest("bærum.invalid/some/path"));
+
+            Assert.AreEqual("connection_failed", response.Header(Constants.ProxyErrorHeader));
+            Assert.AreEqual(1, fixture.ConnectAttempts);
+        }
+
+        [TestMethod]
+        public async Task AllowedIpv6Address_IsNotRefusedAsAHostOutsideTheList()
+        {
+            // Nothing listens on this address, so the call fails. It must fail as a connection
+            // that could not be made, both where the url is checked and where the proxy connects.
+            await using var fixture = new ProxyFixture(Settings(("AllowedTargetHosts", "[::1]"), ("ConnectRetries", "0")));
+
+            var response = await fixture.SendAsync(fixture.CreateRequest($"[::1]:{fixture.Server.Port}/some/path"));
+
+            Assert.AreEqual("connection_failed", response.Header(Constants.ProxyErrorHeader));
+        }
+
         // What the target receives
 
         [TestMethod]
@@ -292,6 +347,23 @@ namespace Dan.ProxyV2.UnitTest
             }
 
             Assert.AreEqual("Bearer token-for-the-target", received["Authorization"]);
+            Assert.AreEqual("nb", received["Accept-Language"]);
+        }
+
+        [TestMethod]
+        public async Task HeadersNamedInConnection_AreNotForwardedToTarget()
+        {
+            // Connection names the headers that only apply to the connection to the proxy.
+            await using var fixture = new ProxyFixture();
+            var request = fixture.CreateRequest();
+            request.Headers.Add("Connection", "keep-alive, Session-Token");
+            request.Headers.Add("Session-Token", "only-for-the-proxy");
+            request.Headers.Add("Accept-Language", "nb");
+
+            await fixture.SendAsync(request);
+
+            var received = fixture.Server.Requests.Single().Headers;
+            Assert.IsFalse(received.ContainsKey("Session-Token"), "A header named in Connection must not be forwarded.");
             Assert.AreEqual("nb", received["Accept-Language"]);
         }
 
@@ -549,11 +621,23 @@ namespace Dan.ProxyV2.UnitTest
         public async Task CallerThatGivesUp_StopsTheCallToTarget()
         {
             await using var fixture = new ProxyFixture();
-            RespondAfterFiveSeconds(fixture.Server);
-            using var callerGaveUp = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
-            var stopwatch = Stopwatch.StartNew();
+            var server = fixture.Server;
+            var targetHasTheRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            server.Respond = async _ =>
+            {
+                targetHasTheRequest.TrySetResult();
+                await Task.Delay(TimeSpan.FromSeconds(5), server.Stopping);
+                return new TestResponse(200, [], []);
+            };
+            using var callerGaveUp = new CancellationTokenSource();
 
-            await Assert.ThrowsAsync<OperationCanceledException>(() => fixture.SendAsync(fixture.CreateRequest(), callerGaveUp.Token));
+            // Given up only when the target has the request, so it is the call to the target that is stopped.
+            var call = fixture.SendAsync(fixture.CreateRequest(), callerGaveUp.Token);
+            await targetHasTheRequest.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var stopwatch = Stopwatch.StartNew();
+            callerGaveUp.Cancel();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => call);
 
             Assert.IsTrue(stopwatch.Elapsed < TimeSpan.FromSeconds(4), $"Kept going for {stopwatch.Elapsed}.");
         }
@@ -594,6 +678,22 @@ namespace Dan.ProxyV2.UnitTest
             Assert.IsTrue(log.Contains("nb"), "Ordinary header values are logged in debug mode.");
             Assert.IsFalse(log.Contains(certificate), "The certificate with its private key must never be logged.");
             Assert.IsFalse(log.Contains("token-for-the-target"), "Credentials for the target must never be logged.");
+        }
+
+        [TestMethod]
+        public async Task DebugMode_NeverLogsTheCertificateHeaderWhateverItIsCalled()
+        {
+            // User-Agent is among the headers whose value is otherwise logged.
+            await using var fixture = new ProxyFixture(Settings(("DebugMode", "true"), ("CustomCertificateHeaderName", "User-Agent")));
+            var (certificate, _) = TestCertificates.CreateClientCertificate("client-a");
+            var request = fixture.CreateRequest();
+            request.Headers.TryAddWithoutValidation("User-Agent", certificate);
+
+            await fixture.SendAsync(request);
+
+            var log = string.Join(Environment.NewLine, fixture.Logs.Messages);
+            Assert.IsTrue(log.Contains("User-Agent"), "Header names are logged in debug mode.");
+            Assert.IsFalse(log.Contains(certificate), "The certificate with its private key must never be logged.");
         }
     }
 }

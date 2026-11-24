@@ -21,6 +21,8 @@ GET or POST https://<app>.azurewebsites.net/DanProxy?url=<target>&code=<function
   authorities that issued it, put them in the same PFX, without their keys, and the proxy sends them on. It
   never fetches them itself, because the address to fetch from stands in the certificate and is chosen by
   the caller. Norsk Pensjon does not need them.
+- The certificate of the target is always validated when a client certificate is sent, whatever
+  `IgnoreCertificateValidation` and `IgnoreCertificateValidationHosts` say. That is as in the first proxy.
 - The proxy keeps the certificate and its key in memory while they are in use, and never logs them.
   A certificate that has not been used for an hour is dropped.
 
@@ -98,6 +100,8 @@ copy src\Dan.ProxyV2\local.settings.json.template src\Dan.ProxyV2\local.settings
 cd src\Dan.ProxyV2
 func start
 ```
+
+From the repository root:
 
 ```
 dotnet test

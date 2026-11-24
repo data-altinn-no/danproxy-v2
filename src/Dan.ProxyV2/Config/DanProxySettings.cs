@@ -58,8 +58,15 @@
             var asUrl = entry.Contains("://", StringComparison.Ordinal) ? entry : "https://" + entry;
 
             return Uri.TryCreate(asUrl, UriKind.Absolute, out var parsed) && !string.IsNullOrEmpty(parsed.Host)
-                ? parsed.Host
+                ? HostName(parsed)
                 : entry;
         }
+
+        /// <summary>
+        /// The host of a url in the one form all host checks use: a name with letters outside
+        /// ASCII in its encoded form ("xn--..."), and an IPv6 address without brackets. That is
+        /// the form the name has when the proxy connects, whichever way it was written.
+        /// </summary>
+        internal static string HostName(Uri url) => url.IdnHost;
     }
 }

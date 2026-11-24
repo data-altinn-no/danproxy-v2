@@ -68,7 +68,8 @@ namespace Dan.ProxyV2.Services
                 return await ErrorAsync(incomingRequest, HttpStatusCode.BadRequest, "invalid_url", "Invalid url provided");
             }
 
-            var targetHost = targetUri.Host;
+            // In the same form as the entries of the host lists.
+            var targetHost = DanProxySettings.HostName(targetUri);
 
             // An empty list allows every host.
             if (_allowedHosts.Length > 0 && !_allowedHosts.Contains(targetHost, StringComparer.OrdinalIgnoreCase))
@@ -234,7 +235,14 @@ namespace Dan.ProxyV2.Services
         {
             var content = outgoingRequest.Content;
 
-            foreach (var header in incomingRequest.Headers.Where(header => ProxyHeaders.IsForwarded(header.Key, _headersNotForwarded)))
+            // Connection names the headers that only apply to the connection to the proxy (RFC 9110, section 7.6.1).
+            var namedInConnection = incomingRequest.Headers.TryGetValues("Connection", out var connectionValues)
+                ? connectionValues.SelectMany(value => value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).ToArray()
+                : [];
+
+            foreach (var header in incomingRequest.Headers.Where(header =>
+                ProxyHeaders.IsForwarded(header.Key, _headersNotForwarded)
+                && !namedInConnection.Contains(header.Key.Trim(), StringComparer.OrdinalIgnoreCase)))
             {
                 // Headers that describe the body, such as Content-Type, belong to the content and
                 // are refused by the request itself. Without a body there is nothing to describe.
@@ -282,7 +290,11 @@ namespace Dan.ProxyV2.Services
 
         private void LogHeader(string direction, string name, IEnumerable<string> values)
         {
-            var value = ProxyHeaders.IsValueLogged(name) ? string.Join(",", values) : "[not logged]";
+            // The certificate header holds a private key, also when it has been given the name of a harmless header.
+            var isCertificateHeader = !string.IsNullOrEmpty(_settings.CustomCertificateHeaderName)
+                && string.Equals(name.Trim(), _settings.CustomCertificateHeaderName.Trim(), StringComparison.OrdinalIgnoreCase);
+
+            var value = !isCertificateHeader && ProxyHeaders.IsValueLogged(name) ? string.Join(",", values) : "[not logged]";
             _logger.LogInformation("{Direction}::: header {HeaderName} : {HeaderValue}", direction, name, value);
         }
 

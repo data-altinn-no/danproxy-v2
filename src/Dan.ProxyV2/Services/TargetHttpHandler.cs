@@ -88,7 +88,8 @@ namespace Dan.ProxyV2.Services
         private static async ValueTask<Stream> ConnectToAllowedHostAsync(
             string[] allowedHosts, SocketsHttpConnectionContext context, CancellationToken cancellationToken)
         {
-            var host = context.DnsEndPoint.Host;
+            // The handler gives an IPv6 address in brackets here. The list has it without them.
+            var host = context.DnsEndPoint.Host.TrimStart('[').TrimEnd(']');
             if (!allowedHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
             {
                 throw new TargetHostNotAllowedException(host);
