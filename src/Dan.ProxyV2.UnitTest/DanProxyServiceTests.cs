@@ -220,6 +220,30 @@ namespace Dan.ProxyV2.UnitTest
             Assert.AreEqual(0, fixture.Server.Requests.Count);
         }
 
+        [TestMethod]
+        public async Task CertificateHeaderThatCannotBeUsed_LogsWhy()
+        {
+            await using var fixture = new ProxyFixture();
+
+            await fixture.SendAsync(fixture.CreateRequest(certificate: TestCertificates.CreateCertificateWithoutPrivateKey()));
+
+            // The log is all there is to find the fault from when a caller is refused in Azure.
+            Assert.IsTrue(
+                fixture.Logs.Messages.Any(message => message.Contains("no certificate with a private key")),
+                "The log says what is wrong with the header, not only that it was refused.");
+        }
+
+        [TestMethod]
+        public async Task CertificateHeaderThatCannotBeUsed_IsNotWrittenToTheLog()
+        {
+            await using var fixture = new ProxyFixture();
+            const string header = "this is not base64";
+
+            await fixture.SendAsync(fixture.CreateRequest(certificate: header));
+
+            Assert.IsFalse(fixture.Logs.Messages.Any(message => message.Contains(header)), "A header that is refused may still hold a private key.");
+        }
+
         // The target url
 
         [TestMethod]
