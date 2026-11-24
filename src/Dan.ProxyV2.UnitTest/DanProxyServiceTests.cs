@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using Dan.ProxyV2.Config;
 using Dan.ProxyV2.UnitTest.TestSupport;
+using OpenTelemetry;
 
 namespace Dan.ProxyV2.UnitTest
 {
@@ -372,6 +373,28 @@ namespace Dan.ProxyV2.UnitTest
 
             Assert.AreEqual("Bearer token-for-the-target", received["Authorization"]);
             Assert.AreEqual("nb", received["Accept-Language"]);
+        }
+
+        [TestMethod]
+        public async Task TraceContextOfTheProxy_IsNotSentToTargetWhenCallsAreTracedAsInAzure()
+        {
+            // The tracing puts trace headers on outgoing calls by its own means, past the handler.
+            await using var fixture = new ProxyFixture(traceCalls: true);
+            using var activity = new Activity("incoming request").Start();
+            Baggage.SetBaggage("caller", "a-plugin");
+
+            try
+            {
+                await fixture.SendAsync(fixture.CreateRequest());
+            }
+            finally
+            {
+                Baggage.ClearBaggage();
+            }
+
+            var received = fixture.Server.Requests.Single().Headers;
+            Assert.IsFalse(received.ContainsKey("traceparent"), "The proxy's own trace id must not be sent to the target.");
+            Assert.IsFalse(received.ContainsKey("baggage"), "Baggage of the proxy's trace must not be sent to the target.");
         }
 
         [TestMethod]
