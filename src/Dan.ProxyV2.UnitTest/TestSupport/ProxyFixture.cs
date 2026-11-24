@@ -4,6 +4,7 @@ using Dan.ProxyV2.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Trace;
 
 namespace Dan.ProxyV2.UnitTest.TestSupport
 {
@@ -33,8 +34,10 @@ namespace Dan.ProxyV2.UnitTest.TestSupport
         /// When set, connection attempts are counted in <see cref="ConnectAttempts"/>, and this
         /// many of them get no answer, as when a firewall drops the packets.
         /// </param>
+        /// <param name="traceCalls">True traces the calls to targets with OpenTelemetry, as the app does in Azure.</param>
         public ProxyFixture(
-            Dictionary<string, string?>? settings = null, bool trustTestServer = true, int? failFirstConnects = null, int? hangFirstConnects = null)
+            Dictionary<string, string?>? settings = null, bool trustTestServer = true, int? failFirstConnects = null, int? hangFirstConnects = null,
+            bool traceCalls = false)
         {
             _connectFailuresLeft = failFirstConnects ?? 0;
             _connectHangsLeft = hangFirstConnects ?? 0;
@@ -67,8 +70,19 @@ namespace Dan.ProxyV2.UnitTest.TestSupport
                     }
                 });
 
+            if (traceCalls)
+            {
+                services.AddTargetCallTracing();
+            }
+
             _services = services.BuildServiceProvider();
             Service = _services.GetRequiredService<IDanProxyService>();
+
+            if (traceCalls)
+            {
+                // Without a host to start it, the tracing begins when the provider is first asked for.
+                _services.GetRequiredService<TracerProvider>();
+            }
         }
 
         public MtlsTestServer Server { get; } = new();

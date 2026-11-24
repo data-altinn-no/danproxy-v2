@@ -5,7 +5,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OpenTelemetry.Trace;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
@@ -34,8 +33,7 @@ var host = new HostBuilder()
         var appInsightsConnectionString = context.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
         if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
         {
-            services.AddOpenTelemetry()
-                .WithTracing(tracing => tracing.AddHttpClientInstrumentation())
+            services.AddTargetCallTracing()
                 .UseAzureMonitorExporter(options =>
                 {
                     options.ConnectionString = appInsightsConnectionString;

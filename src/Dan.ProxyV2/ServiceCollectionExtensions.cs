@@ -4,6 +4,9 @@ using Dan.ProxyV2.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Context.Propagation;
+using OpenTelemetry.Trace;
 
 namespace Dan.ProxyV2
 {
@@ -33,6 +36,18 @@ namespace Dan.ProxyV2
                 .AsLongLivedTargetClient();
 
             return services;
+        }
+
+        /// <summary>Traces the calls to targets, so they are reported as dependencies.</summary>
+        internal static OpenTelemetryBuilder AddTargetCallTracing(this IServiceCollection services)
+        {
+            // The tracing writes trace headers on every outgoing call with this propagator. It
+            // does so past the handler, whose own propagator already writes nothing. With one
+            // that writes nothing here as well, the proxy's trace ids stay in our own telemetry
+            // and are not sent to other organisations.
+            Sdk.SetDefaultTextMapPropagator(new CompositeTextMapPropagator([]));
+
+            return services.AddOpenTelemetry().WithTracing(tracing => tracing.AddHttpClientInstrumentation());
         }
 
         private static IHttpClientBuilder AsLongLivedTargetClient(this IHttpClientBuilder builder) =>
