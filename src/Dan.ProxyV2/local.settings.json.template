@@ -1,0 +1,16 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "DebugMode": "true",
+    "Ignored": "",
+    "CustomCertificateHeaderName": "",
+    "AllowedTargetHosts": "",
+    "IgnoreCertificateValidation": "false",
+    "IgnoreCertificateValidationHosts": "",
+    "TargetTimeoutSeconds": "30",
+    "ConnectTimeoutSeconds": "10",
+    "ConnectRetries": "1"
+  }
+}
