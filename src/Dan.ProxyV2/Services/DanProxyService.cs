@@ -213,8 +213,10 @@ namespace Dan.ProxyV2.Services
                 }
                 catch (Exception ex) when (ex is FormatException or CryptographicException)
                 {
-                    // Only the type is logged. The exception message could quote the header value.
-                    _logger.LogWarning("The certificate header could not be read as a certificate ({ExceptionType})", ex.GetType().Name);
+                    // The message says what is wrong: not base64, not a PFX, a PFX protected with a
+                    // password, or one without a private key. It holds nothing of the header value.
+                    _logger.LogWarning(
+                        "The certificate header could not be read as a certificate ({ExceptionType}: {Reason})", ex.GetType().Name, ex.Message);
                     return null;
                 }
             }
