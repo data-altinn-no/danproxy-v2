@@ -1,0 +1,28 @@
+name: Deploy danproxy-v2
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/README.md'
+      - '**/*.yml'
+  workflow_dispatch:
+
+jobs:
+  run:
+    permissions:
+      actions: read
+      contents: read
+      checks: write
+      pull-requests: write
+    # Same flow as the plugins: dev, then the staging slot, then a swap to production.
+    uses: data-altinn-no/deploy-actions/.github/workflows/dan-deploy-flow.yml@61a7edd132ef73dbb446086d01ac0557dc28e258
+    with:
+      artifact_name: 'danproxy-v2'
+      function_project_path: 'src/Dan.ProxyV2'
+      dotnet_version: '10.0.x'
+    secrets:
+      function_app_name: ${{ secrets.FUNCTIONAPP_NAME }}
+      publish_profile: ${{ secrets.AZURE_FUNCTION_PUBLISH_CREDS }}
+      azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
+      resource_group_prod: ${{ secrets.RESOURCE_GROUP_PROD }}

@@ -1,0 +1,25 @@
+{
+  "version": "2.0",
+  "telemetryMode": "OpenTelemetry",
+  "logging": {
+    "logLevel": {
+      "default": "Information",
+      "Function": "Information",
+      "Host.Aggregator": "Error",
+      "Host.Results": "Information"
+    },
+    "OpenTelemetry": {
+      "logLevel": {
+        "default": "Information",
+        "Function": "Information",
+        "Host.Aggregator": "Error",
+        "Host.Results": "Information"
+      }
+    }
+  },
+  "extensions": {
+    "http": {
+      "routePrefix": ""
+    }
+  }
+}
